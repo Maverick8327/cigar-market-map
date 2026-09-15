@@ -46,6 +46,7 @@ const routeLayer = L.layerGroup().addTo(map);
 const sellerBaseLayer = L.layerGroup().addTo(map);
 const holidayLayer = L.layerGroup().addTo(map);
 const routeEditorLayer = L.layerGroup().addTo(map);
+const routeStopLayer = L.layerGroup().addTo(map);
 let heatLayer = null;
 
 bindEvents();
@@ -610,22 +611,11 @@ function saveSelectedRecord() {
 async function geocodeSelectedRecord() {
   const record = state.records.find(item => item.id === state.selectedId);
   if (!record) return;
-  const query = [record.address, record.city, record.province, record.country].filter(Boolean).join(", ");
-  if (!query) {
-    els.detailSource.value = "No hay direccion suficiente para geocodificar.";
-    return;
-  }
   els.geocodeDetails.textContent = "Buscando ubicacion...";
   els.geocodeDetails.disabled = true;
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
-    const response = await fetch(url);
-    const matches = await response.json();
-    if (!matches?.length) throw new Error("Sin coincidencia");
-    record.lat = Number(matches[0].lat);
-    record.lng = Number(matches[0].lon);
-    record.updatedAt = new Date().toISOString();
-    saveJson(STORE_KEY, state.records);
+    const found = await geocodeRecord(record);
+    if (!found) throw new Error("Sin coincidencia");
     render();
     openDetails(record.id);
   } catch {
@@ -636,12 +626,47 @@ async function geocodeSelectedRecord() {
   }
 }
 
-function addSelectedToRoute() {
+async function addSelectedToRoute() {
   if (!state.selectedId || state.route.includes(state.selectedId)) return;
+  const record = state.records.find(item => item.id === state.selectedId);
+  if (!record) return;
+  els.addToRoute.disabled = true;
+  if (!hasCoords(record)) {
+    els.addToRoute.textContent = "Ubicando parada...";
+    const found = await geocodeRecord(record);
+    if (!found) {
+      els.addToRoute.textContent = "Agregar a ruta";
+      els.addToRoute.disabled = false;
+      els.detailSource.value = "La ficha se agregara cuando tenga una ubicacion precisa. Revisa direccion, ciudad y pais.";
+      return;
+    }
+  }
   state.route.push(state.selectedId);
   saveJson(ROUTE_KEY, state.route);
   clearRoadRoute();
   render();
+  focusRoute();
+  els.addToRoute.textContent = "Agregar a ruta";
+  els.addToRoute.disabled = false;
+  if (state.route.length > 1 || hasCoords(state.sellerBase)) refreshRoadRoute();
+}
+
+async function geocodeRecord(record) {
+  const query = [record.address, record.city, record.province, record.country].filter(Boolean).join(", ");
+  if (!query) return false;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+    const response = await fetch(url);
+    const matches = await response.json();
+    if (!matches?.length) return false;
+    record.lat = Number(matches[0].lat);
+    record.lng = Number(matches[0].lon);
+    record.updatedAt = new Date().toISOString();
+    saveJson(STORE_KEY, state.records);
+    return hasCoords(record);
+  } catch {
+    return false;
+  }
 }
 
 function optimizeRoute() {
@@ -670,6 +695,7 @@ function optimizeRoute() {
 
 function renderRoute() {
   routeLayer.clearLayers();
+  routeStopLayer.clearLayers();
   const records = state.route.map(id => state.records.find(record => record.id === id)).filter(Boolean);
   const mapped = records.filter(hasCoords);
   const base = hasCoords(state.sellerBase) ? state.sellerBase : null;
@@ -727,7 +753,28 @@ function renderRoute() {
   } else if (routePoints.length > 1) {
     L.polyline(routePoints.map(record => [record.lat, record.lng]), { color: "#caa24b", weight: 4, opacity: .8, dashArray: "7 8" }).addTo(routeLayer);
   }
+  renderRouteStops(mapped);
   renderRouteEditor(records);
+}
+
+function renderRouteStops(records) {
+  records.forEach((record, index) => {
+    const marker = L.marker([record.lat, record.lng], {
+      icon: L.divIcon({ className: "route-stop-marker", html: String(index + 1), iconSize: [32, 32], iconAnchor: [16, 16] })
+    }).addTo(routeStopLayer);
+    marker.bindPopup(`<strong>Parada ${index + 1}</strong><br>${escapeHtml(record.name)}<br><button onclick="window.openRecord('${record.id}')">Abrir ficha</button>`);
+  });
+}
+
+function focusRoute() {
+  const records = state.route.map(id => state.records.find(record => record.id === id)).filter(hasCoords);
+  const base = hasCoords(state.sellerBase) ? state.sellerBase : null;
+  const points = base ? [base, ...records] : records;
+  if (points.length === 1) {
+    map.setView([points[0].lat, points[0].lng], 15);
+    return;
+  }
+  if (points.length > 1) map.fitBounds(L.latLngBounds(points.map(point => [point.lat, point.lng])).pad(.2));
 }
 
 async function refreshRoadRoute() {
