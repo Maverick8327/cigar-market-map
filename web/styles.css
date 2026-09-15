@@ -64,6 +64,12 @@ h2 {
   font-size: 16px;
 }
 
+h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
 p, .hint, .summary {
   color: var(--muted);
   line-height: 1.4;
@@ -161,6 +167,35 @@ button.danger {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.seller-base {
+  margin: 2px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, .14);
+}
+
+.base-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.base-status.active { color: #85d48a; }
+
+.base-grid,
+.base-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.text-button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
 }
 
 .summary {
