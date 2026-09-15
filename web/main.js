@@ -2,16 +2,19 @@ const STORE_KEY = "cigar-market-records-v1";
 const ROUTE_KEY = "cigar-market-route-v1";
 const SELLER_BASE_KEY = "cigar-market-seller-base-v1";
 const HOLIDAYS_KEY = "cigar-market-holidays-v1";
+const ROAD_ROUTE_KEY = "cigar-market-road-route-v1";
 
 const state = {
   records: loadJson(STORE_KEY, []),
   route: loadJson(ROUTE_KEY, []),
   sellerBase: loadJson(SELLER_BASE_KEY, null),
   holidays: loadJson(HOLIDAYS_KEY, []),
+  roadRoute: loadJson(ROAD_ROUTE_KEY, null),
   mapView: "points",
   markers: new Map(),
   selectedId: null,
   pickingSellerBase: false,
+  editingRoute: false,
 };
 
 const els = Object.fromEntries([
@@ -23,6 +26,7 @@ const els = Object.fromEntries([
   "useMyLocation", "pickSellerBase", "saveSellerBase", "clearSellerBase",
   "loadHolidays", "holidayCountry", "holidayYear", "holidayDate", "holidaySummary",
   "holidayList", "mapViewHint", "openGoogleRoute", "openWazeRoute", "trafficNote",
+  "refreshRoadRoute", "editRouteMap", "routeAlternatives",
   "details", "closeDetails", "detailTitle", "detailType", "detailRelevance",
   "detailName", "detailLegalName", "detailAddress", "detailCity",
   "detailProvince", "detailCountry", "detailPhone", "detailEmail",
@@ -40,6 +44,7 @@ const markerLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const sellerBaseLayer = L.layerGroup().addTo(map);
 const holidayLayer = L.layerGroup().addTo(map);
+const routeEditorLayer = L.layerGroup().addTo(map);
 let heatLayer = null;
 
 bindEvents();
@@ -68,6 +73,7 @@ function bindEvents() {
   els.clearRoute.addEventListener("click", () => {
     state.route = [];
     saveJson(ROUTE_KEY, state.route);
+    clearRoadRoute();
     render();
   });
   els.optimizeRoute.addEventListener("click", optimizeRoute);
@@ -81,6 +87,8 @@ function bindEvents() {
   els.holidayYear.addEventListener("input", renderHolidays);
   els.openGoogleRoute.addEventListener("click", openGoogleRoute);
   els.openWazeRoute.addEventListener("click", openWazeRoute);
+  els.refreshRoadRoute.addEventListener("click", refreshRoadRoute);
+  els.editRouteMap.addEventListener("click", toggleRouteEditing);
   document.querySelectorAll(".view-tab").forEach(button => {
     button.addEventListener("click", () => {
       state.mapView = button.dataset.view;
@@ -561,7 +569,8 @@ function addSelectedToRoute() {
   if (!state.selectedId || state.route.includes(state.selectedId)) return;
   state.route.push(state.selectedId);
   saveJson(ROUTE_KEY, state.route);
-  renderRoute();
+  clearRoadRoute();
+  render();
 }
 
 function optimizeRoute() {
@@ -583,7 +592,9 @@ function optimizeRoute() {
   });
   state.route = [...ordered.map(record => record.id), ...idsWithoutCoords];
   saveJson(ROUTE_KEY, state.route);
-  renderRoute();
+  clearRoadRoute();
+  render();
+  refreshRoadRoute();
 }
 
 function renderRoute() {
@@ -592,37 +603,143 @@ function renderRoute() {
   const mapped = records.filter(hasCoords);
   const base = hasCoords(state.sellerBase) ? state.sellerBase : null;
   const routePoints = base ? [base, ...mapped, base] : mapped;
-  const totalKm = routePoints.slice(1).reduce((sum, record, index) => sum + distanceKm(routePoints[index], record), 0);
-  const drivingHours = totalKm / 45;
+  const signature = routeSignature(routePoints);
+  const roadRoute = state.roadRoute?.signature === signature ? state.roadRoute : null;
+  const selectedRoad = roadRoute?.routes?.[roadRoute.selected] || null;
+  const totalKm = selectedRoad ? selectedRoad.distance / 1000 : routePoints.slice(1).reduce((sum, record, index) => sum + distanceKm(routePoints[index], record), 0);
+  const drivingHours = selectedRoad ? selectedRoad.duration / 3600 : totalKm / 45;
   const visitHours = (records.length * numberValue(els.visitMinutes)) / 60;
   const fuelCost = totalKm * numberValue(els.consumption) / 100 * numberValue(els.fuelPrice);
   const dayHours = numberValue(els.dayHours);
   const days = dayHours ? Math.ceil((drivingHours + visitHours) / dayHours) : 0;
 
   els.routeSummary.textContent = records.length
-    ? `${base ? "Ida y vuelta desde la base · " : "Sin base: orden local · "}${records.length} paradas · ${totalKm.toFixed(1)} km estimados · ${(drivingHours + visitHours).toFixed(1)} h · ${fuelCost.toFixed(2)} EUR combustible · ${days || 1} dia(s)`
+    ? `${selectedRoad ? "Ruta por calles · " : "Estimacion geografica · "}${base ? "ida y vuelta desde la base · " : ""}${records.length} paradas · ${totalKm.toFixed(1)} km · ${(drivingHours + visitHours).toFixed(1)} h · ${fuelCost.toFixed(2)} EUR combustible · ${days || 1} dia(s)`
     : "Sin ruta seleccionada.";
 
   els.routeList.innerHTML = records.map((record, index) => `
     <li>
-      <button class="record-item" data-id="${escapeHtml(record.id)}">
+      <div class="route-stop">
+        <button class="record-item" data-id="${escapeHtml(record.id)}">
         <strong>${index + 1}. ${escapeHtml(record.name)}</strong>
         <span>${escapeHtml([record.city, record.province, record.status].filter(Boolean).join(" · "))}</span>
-      </button>
+        </button>
+        <div class="stop-controls">
+          <button class="icon-button" data-route-action="up" data-id="${escapeHtml(record.id)}" title="Subir parada">↑</button>
+          <button class="icon-button" data-route-action="down" data-id="${escapeHtml(record.id)}" title="Bajar parada">↓</button>
+          <button class="icon-button remove" data-route-action="remove" data-id="${escapeHtml(record.id)}" title="Quitar parada">×</button>
+        </div>
+      </div>
     </li>
   `).join("");
 
   els.routeList.querySelectorAll("[data-id]").forEach(button => {
-    button.addEventListener("click", () => openDetails(button.dataset.id));
+    if (!button.dataset.routeAction) button.addEventListener("click", () => openDetails(button.dataset.id));
+  });
+  els.routeList.querySelectorAll("[data-route-action]").forEach(button => {
+    button.addEventListener("click", () => adjustRouteStop(button.dataset.id, button.dataset.routeAction));
   });
 
-  if (routePoints.length > 1) {
-    L.polyline(routePoints.map(record => [record.lat, record.lng]), {
-      color: "#caa24b",
-      weight: 4,
-      opacity: .8
-    }).addTo(routeLayer);
+  els.routeAlternatives.innerHTML = roadRoute?.routes?.length > 1
+    ? roadRoute.routes.map((route, index) => `
+      <button class="alternative ${index === roadRoute.selected ? "selected" : ""}" data-route-choice="${index}">
+        Opcion ${index + 1}: ${(route.distance / 1000).toFixed(1)} km · ${(route.duration / 60).toFixed(0)} min
+      </button>
+    `).join("")
+    : "";
+  els.routeAlternatives.querySelectorAll("[data-route-choice]").forEach(button => {
+    button.addEventListener("click", () => selectRoadRoute(Number(button.dataset.routeChoice)));
+  });
+
+  if (selectedRoad?.geometry?.coordinates?.length) {
+    L.geoJSON(selectedRoad.geometry, { style: { color: "#f1b94f", weight: 5, opacity: .92 } }).addTo(routeLayer);
+  } else if (routePoints.length > 1) {
+    L.polyline(routePoints.map(record => [record.lat, record.lng]), { color: "#caa24b", weight: 4, opacity: .8, dashArray: "7 8" }).addTo(routeLayer);
   }
+  renderRouteEditor(records);
+}
+
+async function refreshRoadRoute() {
+  const records = state.route.map(id => state.records.find(record => record.id === id)).filter(hasCoords);
+  const base = hasCoords(state.sellerBase) ? state.sellerBase : null;
+  const points = base ? [base, ...records, base] : records;
+  if (points.length < 2) {
+    els.trafficNote.textContent = "Agrega dos puntos georreferenciados para trazar por calles.";
+    return;
+  }
+  els.trafficNote.textContent = "Calculando ruta por calles...";
+  try {
+    const coordinates = points.map(point => `${point.lng},${point.lat}`).join(";");
+    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=true&steps=false`);
+    if (!response.ok) throw new Error("Ruta no disponible");
+    const data = await response.json();
+    if (!data.routes?.length) throw new Error("Sin alternativas");
+    state.roadRoute = { signature: routeSignature(points), routes: data.routes.slice(0, 3), selected: 0, updatedAt: new Date().toISOString() };
+    saveJson(ROAD_ROUTE_KEY, state.roadRoute);
+    els.trafficNote.textContent = "Ruta por calles actualizada. Usa Google Maps o Waze antes de salir para trafico y cierres en vivo.";
+    renderRoute();
+  } catch {
+    clearRoadRoute();
+    els.trafficNote.textContent = "No fue posible calcular por calles ahora. Se mantiene la estimacion y puedes abrir Google Maps o Waze.";
+    renderRoute();
+  }
+}
+
+function selectRoadRoute(index) {
+  if (!state.roadRoute?.routes?.[index]) return;
+  state.roadRoute.selected = index;
+  saveJson(ROAD_ROUTE_KEY, state.roadRoute);
+  renderRoute();
+}
+
+function adjustRouteStop(id, action) {
+  const index = state.route.indexOf(id);
+  if (index < 0) return;
+  if (action === "remove") state.route.splice(index, 1);
+  if (action === "up" && index > 0) [state.route[index - 1], state.route[index]] = [state.route[index], state.route[index - 1]];
+  if (action === "down" && index < state.route.length - 1) [state.route[index + 1], state.route[index]] = [state.route[index], state.route[index + 1]];
+  saveJson(ROUTE_KEY, state.route);
+  clearRoadRoute();
+  render();
+  refreshRoadRoute();
+}
+
+function toggleRouteEditing() {
+  state.editingRoute = !state.editingRoute;
+  els.editRouteMap.textContent = state.editingRoute ? "Terminar edicion" : "Editar en mapa";
+  els.trafficNote.textContent = state.editingRoute ? "Arrastra los numeros de parada en el mapa. La ruta se recalculara al soltar." : els.trafficNote.textContent;
+  renderRoute();
+}
+
+function renderRouteEditor(records) {
+  routeEditorLayer.clearLayers();
+  if (!state.editingRoute) return;
+  records.filter(hasCoords).forEach((record, index) => {
+    const marker = L.marker([record.lat, record.lng], {
+      draggable: true,
+      icon: L.divIcon({ className: "route-editor-marker", html: String(index + 1), iconSize: [30, 30], iconAnchor: [15, 15] })
+    }).addTo(routeEditorLayer);
+    marker.bindTooltip(`Mover: ${record.name}`, { direction: "top" });
+    marker.on("dragend", event => {
+      const location = event.target.getLatLng();
+      record.lat = location.lat;
+      record.lng = location.lng;
+      record.updatedAt = new Date().toISOString();
+      saveJson(STORE_KEY, state.records);
+      clearRoadRoute();
+      render();
+      refreshRoadRoute();
+    });
+  });
+}
+
+function clearRoadRoute() {
+  state.roadRoute = null;
+  localStorage.removeItem(ROAD_ROUTE_KEY);
+}
+
+function routeSignature(points) {
+  return points.map(point => `${Number(point.lat).toFixed(5)},${Number(point.lng).toFixed(5)}`).join("|");
 }
 
 function mergeRecords(existing, incoming) {
