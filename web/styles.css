@@ -269,6 +269,65 @@ button.danger {
   color: var(--muted);
 }
 
+.route-stop {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.stop-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 4px;
+}
+
+.icon-button {
+  min-width: 32px;
+  padding: 0;
+  background: #18110e;
+  border-color: var(--line);
+  color: var(--gold);
+  font-size: 18px;
+}
+
+.icon-button.remove { color: #e58a80; }
+
+.route-alternatives {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.alternative {
+  padding: 8px;
+  background: rgba(0, 0, 0, .15);
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.alternative.selected {
+  color: #fff3d9;
+  border-color: var(--gold);
+  background: rgba(202, 162, 75, .18);
+}
+
+.route-editor-marker {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid #fff5e8;
+  border-radius: 50%;
+  background: #c45f2b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .record-list {
   display: grid;
   gap: 8px;
