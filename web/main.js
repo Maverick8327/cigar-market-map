@@ -1,11 +1,14 @@
 const STORE_KEY = "cigar-market-records-v1";
 const ROUTE_KEY = "cigar-market-route-v1";
+const SELLER_BASE_KEY = "cigar-market-seller-base-v1";
 
 const state = {
   records: loadJson(STORE_KEY, []),
   route: loadJson(ROUTE_KEY, []),
+  sellerBase: loadJson(SELLER_BASE_KEY, null),
   markers: new Map(),
   selectedId: null,
+  pickingSellerBase: false,
 };
 
 const els = Object.fromEntries([
@@ -13,6 +16,8 @@ const els = Object.fromEntries([
   "typeFilter", "statusFilter", "totalCount", "visibleCount", "mappedCount",
   "routeCount", "recordList", "routeList", "routeSummary", "clearRoute",
   "optimizeRoute", "dayHours", "visitMinutes", "consumption", "fuelPrice",
+  "sellerBaseName", "sellerBaseLat", "sellerBaseLng", "sellerBaseStatus",
+  "useMyLocation", "pickSellerBase", "saveSellerBase", "clearSellerBase",
   "details", "closeDetails", "detailTitle", "detailType", "detailRelevance",
   "detailName", "detailLegalName", "detailAddress", "detailCity",
   "detailProvince", "detailCountry", "detailPhone", "detailEmail",
@@ -28,6 +33,7 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 const markerLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
+const sellerBaseLayer = L.layerGroup().addTo(map);
 
 bindEvents();
 
@@ -55,6 +61,20 @@ function bindEvents() {
     render();
   });
   els.optimizeRoute.addEventListener("click", optimizeRoute);
+  els.saveSellerBase.addEventListener("click", saveSellerBaseFromInputs);
+  els.clearSellerBase.addEventListener("click", clearSellerBase);
+  els.pickSellerBase.addEventListener("click", toggleSellerBasePicker);
+  els.useMyLocation.addEventListener("click", useMyLocation);
+  map.on("click", event => {
+    if (!state.pickingSellerBase) return;
+    setSellerBase({
+      name: getInput("sellerBaseName") || "Ubicacion del vendedor",
+      lat: event.latlng.lat,
+      lng: event.latlng.lng,
+    });
+    state.pickingSellerBase = false;
+    els.pickSellerBase.textContent = "Marcar en mapa";
+  });
 }
 
 async function importFiles(event) {
@@ -186,10 +206,77 @@ function render() {
   renderMarkers(filtered);
   renderRecordList(filtered);
   renderRoute();
+  renderSellerBase();
   els.totalCount.textContent = state.records.length;
   els.visibleCount.textContent = filtered.length;
   els.mappedCount.textContent = filtered.filter(hasCoords).length;
   els.routeCount.textContent = state.route.length;
+}
+
+function renderSellerBase() {
+  sellerBaseLayer.clearLayers();
+  const base = state.sellerBase;
+  setValue("sellerBaseName", base?.name || "");
+  setValue("sellerBaseLat", base?.lat);
+  setValue("sellerBaseLng", base?.lng);
+  els.sellerBaseStatus.textContent = hasCoords(base) ? "Base activa" : "Sin definir";
+  els.sellerBaseStatus.classList.toggle("active", hasCoords(base));
+  if (!hasCoords(base)) return;
+  const marker = L.circleMarker([base.lat, base.lng], {
+    radius: 10,
+    color: "#f5ecdf",
+    fillColor: "#ce5b2d",
+    fillOpacity: 1,
+    weight: 3,
+  }).addTo(sellerBaseLayer);
+  marker.bindPopup(`<strong>Base del vendedor</strong><br>${escapeHtml(base.name || "Ubicacion de salida")}`);
+}
+
+function saveSellerBaseFromInputs() {
+  const lat = Number(els.sellerBaseLat.value);
+  const lng = Number(els.sellerBaseLng.value);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    els.sellerBaseStatus.textContent = "Indica coordenadas validas";
+    return;
+  }
+  setSellerBase({ name: getInput("sellerBaseName") || "Base del vendedor", lat, lng });
+}
+
+function setSellerBase(base) {
+  state.sellerBase = base;
+  saveJson(SELLER_BASE_KEY, base);
+  render();
+}
+
+function clearSellerBase() {
+  state.sellerBase = null;
+  state.pickingSellerBase = false;
+  localStorage.removeItem(SELLER_BASE_KEY);
+  els.pickSellerBase.textContent = "Marcar en mapa";
+  render();
+}
+
+function toggleSellerBasePicker() {
+  state.pickingSellerBase = !state.pickingSellerBase;
+  els.pickSellerBase.textContent = state.pickingSellerBase ? "Toca el mapa..." : "Marcar en mapa";
+  if (state.pickingSellerBase) els.sellerBaseStatus.textContent = "Selecciona el punto en el mapa";
+}
+
+function useMyLocation() {
+  if (!navigator.geolocation) {
+    els.sellerBaseStatus.textContent = "GPS no disponible en este dispositivo";
+    return;
+  }
+  els.sellerBaseStatus.textContent = "Solicitando ubicacion...";
+  navigator.geolocation.getCurrentPosition(
+    position => setSellerBase({
+      name: getInput("sellerBaseName") || "Ubicacion actual del vendedor",
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+    }),
+    () => { els.sellerBaseStatus.textContent = "No se pudo obtener el GPS"; },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 300000 }
+  );
 }
 
 function refreshFilters() {
@@ -339,12 +426,13 @@ function addSelectedToRoute() {
 
 function optimizeRoute() {
   const records = state.route.map(id => state.records.find(record => record.id === id)).filter(hasCoords);
-  if (records.length < 3) return;
+  if (records.length < 2) return;
 
-  const ordered = [records[0]];
-  const pending = records.slice(1);
+  const start = hasCoords(state.sellerBase) ? state.sellerBase : records[0];
+  const ordered = [];
+  const pending = [...records];
   while (pending.length) {
-    const last = ordered[ordered.length - 1];
+    const last = ordered[ordered.length - 1] || start;
     pending.sort((a, b) => distanceKm(last, a) - distanceKm(last, b));
     ordered.push(pending.shift());
   }
@@ -362,7 +450,9 @@ function renderRoute() {
   routeLayer.clearLayers();
   const records = state.route.map(id => state.records.find(record => record.id === id)).filter(Boolean);
   const mapped = records.filter(hasCoords);
-  const totalKm = mapped.slice(1).reduce((sum, record, index) => sum + distanceKm(mapped[index], record), 0);
+  const base = hasCoords(state.sellerBase) ? state.sellerBase : null;
+  const routePoints = base ? [base, ...mapped, base] : mapped;
+  const totalKm = routePoints.slice(1).reduce((sum, record, index) => sum + distanceKm(routePoints[index], record), 0);
   const drivingHours = totalKm / 45;
   const visitHours = (records.length * numberValue(els.visitMinutes)) / 60;
   const fuelCost = totalKm * numberValue(els.consumption) / 100 * numberValue(els.fuelPrice);
@@ -370,7 +460,7 @@ function renderRoute() {
   const days = dayHours ? Math.ceil((drivingHours + visitHours) / dayHours) : 0;
 
   els.routeSummary.textContent = records.length
-    ? `${records.length} paradas · ${totalKm.toFixed(1)} km estimados · ${(drivingHours + visitHours).toFixed(1)} h · ${fuelCost.toFixed(2)} EUR combustible · ${days || 1} dia(s)`
+    ? `${base ? "Ida y vuelta desde la base · " : "Sin base: orden local · "}${records.length} paradas · ${totalKm.toFixed(1)} km estimados · ${(drivingHours + visitHours).toFixed(1)} h · ${fuelCost.toFixed(2)} EUR combustible · ${days || 1} dia(s)`
     : "Sin ruta seleccionada.";
 
   els.routeList.innerHTML = records.map((record, index) => `
@@ -386,8 +476,8 @@ function renderRoute() {
     button.addEventListener("click", () => openDetails(button.dataset.id));
   });
 
-  if (mapped.length > 1) {
-    L.polyline(mapped.map(record => [record.lat, record.lng]), {
+  if (routePoints.length > 1) {
+    L.polyline(routePoints.map(record => [record.lat, record.lng]), {
       color: "#caa24b",
       weight: 4,
       opacity: .8
