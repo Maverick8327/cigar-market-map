@@ -72,6 +72,24 @@
         <h2>Ruta logica</h2>
         <button id="optimizeRoute" class="secondary">Optimizar</button>
       </div>
+      <div class="seller-base">
+        <div class="section-title">
+          <h3>Base del vendedor</h3>
+          <span id="sellerBaseStatus" class="base-status">Sin definir</span>
+        </div>
+        <label>Nombre / referencia<input id="sellerBaseName" placeholder="Ej. Oficina Madrid Centro"></label>
+        <div class="base-grid">
+          <label>Latitud<input id="sellerBaseLat" type="number" step="any" placeholder="40.4168"></label>
+          <label>Longitud<input id="sellerBaseLng" type="number" step="any" placeholder="-3.7038"></label>
+        </div>
+        <div class="base-actions">
+          <button id="useMyLocation" class="secondary">Usar mi ubicacion</button>
+          <button id="pickSellerBase" class="secondary">Marcar en mapa</button>
+          <button id="saveSellerBase">Guardar base</button>
+          <button id="clearSellerBase" class="text-button">Quitar</button>
+        </div>
+        <p class="hint">La ruta optimizada inicia y termina en esta base. En modo "Marcar en mapa", toca el punto de salida.</p>
+      </div>
       <div class="route-grid">
         <label>Horas dia<input id="dayHours" type="number" min="1" step="0.5" value="8"></label>
         <label>Min visita<input id="visitMinutes" type="number" min="5" step="5" value="25"></label>
