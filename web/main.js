@@ -3,6 +3,7 @@ const ROUTE_KEY = "cigar-market-route-v1";
 const SELLER_BASE_KEY = "cigar-market-seller-base-v1";
 const HOLIDAYS_KEY = "cigar-market-holidays-v1";
 const ROAD_ROUTE_KEY = "cigar-market-road-route-v1";
+const BUNDLED_CATALOG_KEY = "cigar-market-bundled-catalog-v1";
 
 const state = {
   records: loadJson(STORE_KEY, []),
@@ -29,9 +30,9 @@ const els = Object.fromEntries([
   "refreshRoadRoute", "editRouteMap", "routeAlternatives",
   "details", "closeDetails", "detailTitle", "detailType", "detailRelevance",
   "detailName", "detailLegalName", "detailAddress", "detailCity",
-  "detailProvince", "detailCountry", "detailPhone", "detailEmail",
+  "detailProvince", "detailCountry", "detailLat", "detailLng", "detailPhone", "detailEmail",
   "detailWeb", "detailContact", "detailStatus", "detailNextAction",
-  "detailNotes", "detailSource", "saveDetails", "addToRoute", "emptyMap"
+  "detailNotes", "detailSource", "saveDetails", "addToRoute", "geocodeDetails", "emptyMap"
 ].map(id => [id, document.getElementById(id)]));
 
 const map = L.map("map", { preferCanvas: true }).setView([40.4168, -3.7038], 6);
@@ -52,12 +53,16 @@ bindEvents();
 els.holidayYear.value = new Date().getFullYear();
 els.holidayDate.value = new Date().toISOString().slice(0, 10);
 
-if (!state.records.length) {
-  state.records = demoRecords();
-  saveJson(STORE_KEY, state.records);
-}
+initialize();
 
-render();
+async function initialize() {
+  if (!state.records.length) {
+    state.records = demoRecords();
+    saveJson(STORE_KEY, state.records);
+  }
+  render();
+  await loadBundledCatalog();
+}
 
 function bindEvents() {
   els.csvInput.addEventListener("change", importFiles);
@@ -70,6 +75,7 @@ function bindEvents() {
   els.closeDetails.addEventListener("click", () => els.details.classList.add("hidden"));
   els.saveDetails.addEventListener("click", saveSelectedRecord);
   els.addToRoute.addEventListener("click", addSelectedToRoute);
+  els.geocodeDetails.addEventListener("click", geocodeSelectedRecord);
   els.clearRoute.addEventListener("click", () => {
     state.route = [];
     saveJson(ROUTE_KEY, state.route);
@@ -108,6 +114,34 @@ function bindEvents() {
   });
 }
 
+async function loadBundledCatalog() {
+  try {
+    const response = await fetch("./data/locations.json");
+    if (!response.ok) throw new Error("Catalogo no disponible");
+    const catalog = await response.json();
+    const incoming = (catalog.records || []).map(normalizeBundledRecord);
+    state.records = mergeRecords(state.records, incoming);
+    localStorage.setItem(BUNDLED_CATALOG_KEY, catalog.generatedAt || "loaded");
+    saveJson(STORE_KEY, state.records);
+    render();
+  } catch {
+    // The app remains usable with the device-local records when offline.
+  }
+}
+
+function normalizeBundledRecord(record) {
+  return {
+    ...record,
+    relevance: record.relevance || "Sin clasificar",
+    dataStatus: record.dataStatus || "Pendiente",
+    status: record.status || "Sin contactar",
+    nextAction: record.nextAction || "Validar ficha",
+    notes: record.notes || "",
+    sourceDate: record.sourceDate || "",
+    updatedAt: record.updatedAt || null,
+  };
+}
+
 async function importFiles(event) {
   const files = [...event.target.files];
   for (const file of files) {
@@ -135,6 +169,7 @@ function normalizeRow(row, sourceName, index) {
     id: makeId(sourceName, index, [name, legalName, address, city, province]),
     type: inferType(row, sourceName),
     relevance: "Sin clasificar",
+    dataStatus: value("estado dato") || "Pendiente",
     name: name || legalName || "Registro sin nombre",
     legalName,
     address,
@@ -468,6 +503,9 @@ function renderMarkers(records) {
   state.markers.clear();
   const coords = records.filter(hasCoords);
   els.emptyMap.style.display = coords.length ? "none" : "block";
+  if (!coords.length && state.records.length) {
+    els.emptyMap.innerHTML = `<h2>${state.records.length} fichas cargadas</h2><p>Selecciona una ficha y usa Geocodificar para ubicarla con precision antes de planificar visitas.</p>`;
+  }
 
   coords.forEach(record => {
     const marker = L.circleMarker([record.lat, record.lng], {
@@ -492,7 +530,7 @@ function renderRecordList(records) {
     <button class="record-item" data-id="${escapeHtml(record.id)}">
       <strong>${escapeHtml(record.name)}</strong>
       <span>${escapeHtml([record.type, record.city, record.province].filter(Boolean).join(" · "))}</span>
-      <span>${escapeHtml([record.phone, record.email].filter(Boolean).join(" · ") || "Sin contacto enriquecido")}</span>
+      <span>${escapeHtml([record.phone, record.email, record.dataStatus].filter(Boolean).join(" · ") || "Sin contacto enriquecido")}</span>
     </button>
   `).join("");
 
@@ -525,6 +563,8 @@ function openDetails(id) {
   setValue("detailCity", record.city);
   setValue("detailProvince", record.province);
   setValue("detailCountry", record.country);
+  setValue("detailLat", record.lat);
+  setValue("detailLng", record.lng);
   setValue("detailPhone", record.phone);
   setValue("detailEmail", record.email);
   setValue("detailWeb", record.web);
@@ -551,6 +591,8 @@ function saveSelectedRecord() {
     city: getInput("detailCity"),
     province: getInput("detailProvince"),
     country: getInput("detailCountry"),
+    lat: parseNumber(getInput("detailLat")),
+    lng: parseNumber(getInput("detailLng")),
     phone: getInput("detailPhone"),
     email: getInput("detailEmail"),
     web: getInput("detailWeb"),
@@ -563,6 +605,35 @@ function saveSelectedRecord() {
   saveJson(STORE_KEY, state.records);
   render();
   openDetails(record.id);
+}
+
+async function geocodeSelectedRecord() {
+  const record = state.records.find(item => item.id === state.selectedId);
+  if (!record) return;
+  const query = [record.address, record.city, record.province, record.country].filter(Boolean).join(", ");
+  if (!query) {
+    els.detailSource.value = "No hay direccion suficiente para geocodificar.";
+    return;
+  }
+  els.geocodeDetails.textContent = "Buscando ubicacion...";
+  els.geocodeDetails.disabled = true;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+    const response = await fetch(url);
+    const matches = await response.json();
+    if (!matches?.length) throw new Error("Sin coincidencia");
+    record.lat = Number(matches[0].lat);
+    record.lng = Number(matches[0].lon);
+    record.updatedAt = new Date().toISOString();
+    saveJson(STORE_KEY, state.records);
+    render();
+    openDetails(record.id);
+  } catch {
+    els.detailSource.value = "No se encontro una ubicacion precisa. Verifica direccion y ciudad.";
+  } finally {
+    els.geocodeDetails.textContent = "Geocodificar ficha";
+    els.geocodeDetails.disabled = false;
+  }
 }
 
 function addSelectedToRoute() {
