@@ -67,6 +67,16 @@
       <div><strong id="routeCount">0</strong><span>Ruta</span></div>
     </section>
 
+    <section class="box map-tools">
+      <h2>Capas del mapa</h2>
+      <div class="view-tabs" role="tablist" aria-label="Vista del mapa">
+        <button class="view-tab active" data-view="points">Puntos</button>
+        <button class="view-tab" data-view="density">Densidad</button>
+        <button class="view-tab" data-view="holidays">Feriados</button>
+      </div>
+      <p id="mapViewHint" class="hint">Puntos comerciales y contactos cargados en la base.</p>
+    </section>
+
     <section class="box">
       <div class="section-title">
         <h2>Ruta logica</h2>
@@ -98,7 +108,26 @@
       </div>
       <div id="routeSummary" class="summary">Sin ruta seleccionada.</div>
       <ol id="routeList" class="route-list"></ol>
+      <div class="navigation-actions">
+        <button id="openGoogleRoute" class="secondary">Abrir en Google Maps</button>
+        <button id="openWazeRoute" class="secondary">Abrir en Waze</button>
+      </div>
+      <p id="trafficNote" class="hint">La navegacion externa aporta trafico, obras y cierres reportados en tiempo real.</p>
       <button id="clearRoute" class="danger">Limpiar ruta</button>
+    </section>
+
+    <section class="box holiday-tools">
+      <div class="section-title">
+        <h2>Feriados y festivos</h2>
+        <button id="loadHolidays" class="secondary">Actualizar</button>
+      </div>
+      <div class="holiday-grid">
+        <label>Pais ISO<input id="holidayCountry" maxlength="2" value="ES" placeholder="ES"></label>
+        <label>Anio<input id="holidayYear" type="number" min="2020" max="2035"></label>
+        <label>Fecha a evaluar<input id="holidayDate" type="date"></label>
+      </div>
+      <div id="holidaySummary" class="summary">Carga los feriados nacionales del pais de trabajo.</div>
+      <div id="holidayList" class="holiday-list"></div>
     </section>
 
     <section class="box">
@@ -143,6 +172,7 @@
   </section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
   <script src="./main.js"></script>
 </body>
 </html>
