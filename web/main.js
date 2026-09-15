@@ -1,11 +1,14 @@
 const STORE_KEY = "cigar-market-records-v1";
 const ROUTE_KEY = "cigar-market-route-v1";
 const SELLER_BASE_KEY = "cigar-market-seller-base-v1";
+const HOLIDAYS_KEY = "cigar-market-holidays-v1";
 
 const state = {
   records: loadJson(STORE_KEY, []),
   route: loadJson(ROUTE_KEY, []),
   sellerBase: loadJson(SELLER_BASE_KEY, null),
+  holidays: loadJson(HOLIDAYS_KEY, []),
+  mapView: "points",
   markers: new Map(),
   selectedId: null,
   pickingSellerBase: false,
@@ -18,6 +21,8 @@ const els = Object.fromEntries([
   "optimizeRoute", "dayHours", "visitMinutes", "consumption", "fuelPrice",
   "sellerBaseName", "sellerBaseLat", "sellerBaseLng", "sellerBaseStatus",
   "useMyLocation", "pickSellerBase", "saveSellerBase", "clearSellerBase",
+  "loadHolidays", "holidayCountry", "holidayYear", "holidayDate", "holidaySummary",
+  "holidayList", "mapViewHint", "openGoogleRoute", "openWazeRoute", "trafficNote",
   "details", "closeDetails", "detailTitle", "detailType", "detailRelevance",
   "detailName", "detailLegalName", "detailAddress", "detailCity",
   "detailProvince", "detailCountry", "detailPhone", "detailEmail",
@@ -34,8 +39,13 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const markerLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const sellerBaseLayer = L.layerGroup().addTo(map);
+const holidayLayer = L.layerGroup().addTo(map);
+let heatLayer = null;
 
 bindEvents();
+
+els.holidayYear.value = new Date().getFullYear();
+els.holidayDate.value = new Date().toISOString().slice(0, 10);
 
 if (!state.records.length) {
   state.records = demoRecords();
@@ -65,6 +75,19 @@ function bindEvents() {
   els.clearSellerBase.addEventListener("click", clearSellerBase);
   els.pickSellerBase.addEventListener("click", toggleSellerBasePicker);
   els.useMyLocation.addEventListener("click", useMyLocation);
+  els.loadHolidays.addEventListener("click", loadHolidays);
+  els.holidayDate.addEventListener("change", render);
+  els.holidayCountry.addEventListener("input", renderHolidays);
+  els.holidayYear.addEventListener("input", renderHolidays);
+  els.openGoogleRoute.addEventListener("click", openGoogleRoute);
+  els.openWazeRoute.addEventListener("click", openWazeRoute);
+  document.querySelectorAll(".view-tab").forEach(button => {
+    button.addEventListener("click", () => {
+      state.mapView = button.dataset.view;
+      document.querySelectorAll(".view-tab").forEach(tab => tab.classList.toggle("active", tab === button));
+      render();
+    });
+  });
   map.on("click", event => {
     if (!state.pickingSellerBase) return;
     setSellerBase({
@@ -207,6 +230,8 @@ function render() {
   renderRecordList(filtered);
   renderRoute();
   renderSellerBase();
+  renderDensity(filtered);
+  renderHolidays();
   els.totalCount.textContent = state.records.length;
   els.visibleCount.textContent = filtered.length;
   els.mappedCount.textContent = filtered.filter(hasCoords).length;
@@ -279,6 +304,121 @@ function useMyLocation() {
   );
 }
 
+function renderDensity(records) {
+  if (heatLayer) {
+    map.removeLayer(heatLayer);
+    heatLayer = null;
+  }
+  const points = records.filter(hasCoords);
+  if (state.mapView === "density" && points.length && window.L?.heatLayer) {
+    heatLayer = L.heatLayer(points.map(record => [record.lat, record.lng, densityWeight(record)]), {
+      radius: 28,
+      blur: 22,
+      maxZoom: 15,
+      minOpacity: .35,
+      gradient: { .2: "#7b5cd6", .45: "#3f9bd6", .65: "#d6b34a", .85: "#d57a39", 1: "#bd3e32" }
+    }).addTo(map);
+  }
+  els.mapViewHint.textContent = {
+    points: "Puntos comerciales y contactos cargados en la base.",
+    density: `${points.length} ubicaciones georreferenciadas. Los colores intensos indican mayor concentracion comercial.`,
+    holidays: "Los feriados aplican a los puntos del pais seleccionado. Selecciona una fecha para identificar jornadas sensibles."
+  }[state.mapView];
+}
+
+function densityWeight(record) {
+  return { Alta: 1, Media: .65, Baja: .35 }[record.relevance] || .5;
+}
+
+async function loadHolidays() {
+  const country = getInput("holidayCountry").toUpperCase();
+  const year = Number(els.holidayYear.value);
+  if (!/^[A-Z]{2}$/.test(country) || !Number.isFinite(year)) {
+    els.holidaySummary.textContent = "Indica un pais ISO de dos letras y un anio valido.";
+    return;
+  }
+  els.holidaySummary.textContent = "Consultando calendario nacional...";
+  try {
+    const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`);
+    if (!response.ok) throw new Error("Calendario no disponible");
+    const holidays = await response.json();
+    state.holidays = state.holidays.filter(item => item.countryCode !== country || item.year !== year);
+    state.holidays.push(...holidays.map(item => ({ ...item, countryCode: country, year })));
+    saveJson(HOLIDAYS_KEY, state.holidays);
+    render();
+  } catch {
+    els.holidaySummary.textContent = "No se pudo actualizar. Puedes conservar los feriados guardados y trabajar sin conexion.";
+  }
+}
+
+function renderHolidays() {
+  holidayLayer.clearLayers();
+  const country = getInput("holidayCountry").toUpperCase();
+  const year = Number(els.holidayYear.value);
+  const selectedDate = els.holidayDate.value;
+  const holidays = state.holidays.filter(item => item.countryCode === country && item.year === year);
+  const selected = holidays.filter(item => item.date === selectedDate);
+  const countryRecords = state.records.filter(record => isoCountry(record.country) === country && hasCoords(record));
+
+  els.holidaySummary.textContent = holidays.length
+    ? `${holidays.length} feriados nacionales cargados. ${selected.length ? `${selected[0].localName || selected[0].name}: revisar visitas y horarios.` : "Sin feriado nacional en la fecha seleccionada."}`
+    : "Carga los feriados nacionales del pais de trabajo.";
+  els.holidayList.innerHTML = holidays.slice(0, 16).map(item => `
+    <button class="holiday-item ${item.date === selectedDate ? "selected" : ""}" data-holiday-date="${item.date}">
+      <strong>${escapeHtml(item.date)}</strong><span>${escapeHtml(item.localName || item.name)}</span>
+    </button>
+  `).join("") || '<p class="hint">Sin datos locales. Presiona Actualizar con conexion.</p>';
+  els.holidayList.querySelectorAll("[data-holiday-date]").forEach(button => {
+    button.addEventListener("click", () => { els.holidayDate.value = button.dataset.holidayDate; render(); });
+  });
+
+  if (state.mapView === "holidays" && selected.length) {
+    countryRecords.forEach(record => {
+      L.circleMarker([record.lat, record.lng], {
+        radius: 11,
+        color: "#ffcf70",
+        fillColor: "#8c342f",
+        fillOpacity: .75,
+        weight: 3
+      }).bindPopup(`<strong>Revision de feriado</strong><br>${escapeHtml(record.name)}<br>${escapeHtml(selected[0].localName || selected[0].name)}`).addTo(holidayLayer);
+    });
+  }
+}
+
+function isoCountry(country) {
+  const value = clean(country);
+  return ({ espana: "ES", spain: "ES", portugal: "PT", france: "FR", francia: "FR", italy: "IT", italia: "IT", germany: "DE", alemania: "DE", uk: "GB", "reino unido": "GB", "united kingdom": "GB" })[value] || "";
+}
+
+function openGoogleRoute() {
+  const mapped = state.route.map(id => state.records.find(record => record.id === id)).filter(hasCoords);
+  const base = hasCoords(state.sellerBase) ? state.sellerBase : null;
+  if (!mapped.length) {
+    els.trafficNote.textContent = "Agrega al menos una parada con coordenadas para abrir la navegacion.";
+    return;
+  }
+  const origin = base ? coordinateText(base) : coordinateText(mapped[0]);
+  const destination = base ? coordinateText(base) : coordinateText(mapped[mapped.length - 1]);
+  const stops = base ? mapped : mapped.slice(1, -1);
+  const params = new URLSearchParams({ api: "1", origin, destination, travelmode: "driving" });
+  if (stops.length) params.set("waypoints", stops.map(coordinateText).join("|"));
+  window.open(`https://www.google.com/maps/dir/?${params.toString()}`, "_blank", "noopener");
+}
+
+function openWazeRoute() {
+  const mapped = state.route.map(id => state.records.find(record => record.id === id)).filter(hasCoords);
+  const destination = mapped[mapped.length - 1];
+  if (!destination) {
+    els.trafficNote.textContent = "Agrega una parada con coordenadas para abrir Waze.";
+    return;
+  }
+  window.open(`https://waze.com/ul?ll=${destination.lat}%2C${destination.lng}&navigate=yes&utm_source=cigar_market_map`, "_blank", "noopener");
+}
+
+function coordinateText(point) {
+  return `${point.lat},${point.lng}`;
+}
+
 function refreshFilters() {
   preserveSelect(els.countryFilter, uniqueValues(state.records, "country"), "Todos");
   preserveSelect(els.provinceFilter, uniqueValues(state.records, "province"), "Todas");
@@ -326,7 +466,7 @@ function renderMarkers(records) {
       radius: 7,
       color: typeColor(record.type),
       fillColor: typeColor(record.type),
-      fillOpacity: .82,
+      fillOpacity: state.mapView === "density" ? .22 : .82,
       weight: 2
     }).addTo(markerLayer);
     marker.bindPopup(popupHtml(record));
