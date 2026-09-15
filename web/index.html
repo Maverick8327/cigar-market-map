@@ -43,7 +43,11 @@
           <option>Estanco</option>
           <option>PVR</option>
           <option>Tienda</option>
+          <option>Tienda/Lounge</option>
+          <option>Lounge</option>
           <option>Distribuidor</option>
+          <option>Importador</option>
+          <option>Subdistribuidor / importador</option>
           <option>Contacto personal</option>
         </select>
       </label>
@@ -161,6 +165,8 @@
       <label>Ciudad<input id="detailCity"></label>
       <label>Provincia<input id="detailProvince"></label>
       <label>Pais<input id="detailCountry"></label>
+      <label>Latitud<input id="detailLat" type="number" step="any"></label>
+      <label>Longitud<input id="detailLng" type="number" step="any"></label>
       <label>Telefono<input id="detailPhone"></label>
       <label>Email<input id="detailEmail"></label>
       <label>Web / redes<input id="detailWeb"></label>
@@ -173,6 +179,7 @@
     <div class="actions">
       <button id="saveDetails">Guardar ficha</button>
       <button id="addToRoute">Agregar a ruta</button>
+      <button id="geocodeDetails" class="secondary">Geocodificar ficha</button>
     </div>
   </section>
 
