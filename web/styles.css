@@ -198,6 +198,65 @@ button.danger {
   color: var(--muted);
 }
 
+.view-tabs,
+.navigation-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.view-tab {
+  padding: 8px 5px;
+  background: #18110e;
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.view-tab.active {
+  background: var(--gold-2);
+  border-color: var(--gold);
+  color: #fff7e9;
+}
+
+.holiday-grid {
+  display: grid;
+  grid-template-columns: .7fr .8fr 1.5fr;
+  gap: 8px;
+}
+
+.holiday-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+  margin-top: 10px;
+}
+
+.holiday-item {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, .18);
+  border-color: var(--line);
+  color: var(--muted);
+  text-align: left;
+  font-size: 12px;
+}
+
+.holiday-item strong { color: var(--gold); }
+
+.holiday-item.selected {
+  border-color: #d8905b;
+  background: rgba(140, 52, 47, .42);
+}
+
+.navigation-actions {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+}
+
 .summary {
   margin: 12px 0 0;
   padding: 10px;
@@ -321,4 +380,7 @@ button.danger {
   .main { order: 1; }
   #map { height: 46vh; }
   .empty-map { display: none; }
+
+  .holiday-grid { grid-template-columns: 1fr 1fr; }
+  .holiday-grid label:last-child { grid-column: 1 / -1; }
 }
