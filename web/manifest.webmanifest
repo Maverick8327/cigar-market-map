@@ -1,0 +1,9 @@
+{
+  "name": "Cigar Market Map",
+  "short_name": "Market Map",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#11100e",
+  "theme_color": "#1a1512",
+  "icons": []
+}
