@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cigar Market Map</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="mark">MV</span>
+      <div>
+        <h1>Cigar Market Map</h1>
+        <p>Mapa comercial de estancos, PVR, tiendas y distribuidores</p>
+      </div>
+    </div>
+
+    <section class="box">
+      <h2>Importacion</h2>
+      <input id="csvInput" type="file" accept=".csv,text/csv" multiple>
+      <p class="hint">Carga CSV oficiales o bases enriquecidas. Si el archivo no trae coordenadas, queda visible en tabla y ficha, listo para geocodificar.</p>
+    </section>
+
+    <section class="filters">
+      <label>Busqueda
+        <input id="searchInput" placeholder="nombre, ciudad, direccion, telefono...">
+      </label>
+      <label>Pais
+        <select id="countryFilter"><option value="">Todos</option></select>
+      </label>
+      <label>Provincia
+        <select id="provinceFilter"><option value="">Todas</option></select>
+      </label>
+      <label>Ciudad
+        <select id="cityFilter"><option value="">Todas</option></select>
+      </label>
+      <label>Tipo
+        <select id="typeFilter">
+          <option value="">Todos</option>
+          <option>Estanco</option>
+          <option>PVR</option>
+          <option>Tienda</option>
+          <option>Distribuidor</option>
+          <option>Contacto personal</option>
+        </select>
+      </label>
+      <label>Estado
+        <select id="statusFilter">
+          <option value="">Todos</option>
+          <option>Sin contactar</option>
+          <option>Contactado</option>
+          <option>Interesado</option>
+          <option>Visita agendada</option>
+          <option>Cliente potencial</option>
+          <option>No viable</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="metrics">
+      <div><strong id="totalCount">0</strong><span>Total</span></div>
+      <div><strong id="visibleCount">0</strong><span>Filtrados</span></div>
+      <div><strong id="mappedCount">0</strong><span>En mapa</span></div>
+      <div><strong id="routeCount">0</strong><span>Ruta</span></div>
+    </section>
+
+    <section class="box">
+      <div class="section-title">
+        <h2>Ruta logica</h2>
+        <button id="optimizeRoute" class="secondary">Optimizar</button>
+      </div>
+      <div class="route-grid">
+        <label>Horas dia<input id="dayHours" type="number" min="1" step="0.5" value="8"></label>
+        <label>Min visita<input id="visitMinutes" type="number" min="5" step="5" value="25"></label>
+        <label>Consumo L/100km<input id="consumption" type="number" min="1" step="0.1" value="7.5"></label>
+        <label>Combustible EUR/L<input id="fuelPrice" type="number" min="0" step="0.01" value="1.65"></label>
+      </div>
+      <div id="routeSummary" class="summary">Sin ruta seleccionada.</div>
+      <ol id="routeList" class="route-list"></ol>
+      <button id="clearRoute" class="danger">Limpiar ruta</button>
+    </section>
+
+    <section class="box">
+      <h2>Registros</h2>
+      <div id="recordList" class="record-list"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div id="map"></div>
+    <div id="emptyMap" class="empty-map">
+      <h2>Importa tu base oficial</h2>
+      <p>Los puntos con latitud y longitud apareceran en el mapa. Los demas quedan listos para enriquecimiento.</p>
+    </div>
+  </main>
+
+  <section id="details" class="details hidden">
+    <button id="closeDetails" class="close" aria-label="Cerrar">x</button>
+    <h2 id="detailTitle">Ficha</h2>
+    <div class="detail-grid">
+      <label>Tipo<input id="detailType"></label>
+      <label>Relevancia<select id="detailRelevance"><option>Alta</option><option>Media</option><option>Baja</option><option>Sin clasificar</option></select></label>
+      <label>Nombre<input id="detailName"></label>
+      <label>Razon social<input id="detailLegalName"></label>
+      <label>Direccion<input id="detailAddress"></label>
+      <label>Ciudad<input id="detailCity"></label>
+      <label>Provincia<input id="detailProvince"></label>
+      <label>Pais<input id="detailCountry"></label>
+      <label>Telefono<input id="detailPhone"></label>
+      <label>Email<input id="detailEmail"></label>
+      <label>Web / redes<input id="detailWeb"></label>
+      <label>Contacto<input id="detailContact"></label>
+      <label>Estado<select id="detailStatus"><option>Sin contactar</option><option>Contactado</option><option>Interesado</option><option>Visita agendada</option><option>Cliente potencial</option><option>No viable</option></select></label>
+      <label>Proxima accion<input id="detailNextAction"></label>
+      <label>Notas<textarea id="detailNotes"></textarea></label>
+      <label>Fuente<textarea id="detailSource"></textarea></label>
+    </div>
+    <div class="actions">
+      <button id="saveDetails">Guardar ficha</button>
+      <button id="addToRoute">Agregar a ruta</button>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./main.js"></script>
+</body>
+</html>
