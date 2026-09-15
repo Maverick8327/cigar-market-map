@@ -328,6 +328,20 @@ button.danger {
   font-weight: 800;
 }
 
+.route-stop-marker {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 3px solid #fff7ea;
+  border-radius: 50%;
+  background: #174d39;
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .5);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .record-list {
   display: grid;
   gap: 8px;
